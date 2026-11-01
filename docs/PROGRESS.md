@@ -16,8 +16,16 @@ Topology, routing, NAT, nft rules, conntrack accounting and tbf work; CAKE/netem
   (voice 111 pps x 174 B symmetric; bulk large down packets; video bursty; web sparse). A 3-run smoke training got
   voice recall 1.0 vs 0.0 for port rules on unusual ports. Tiny sample: indicative only, not a result.
 
-## NOT yet verified (first CI run on a full kernel will tell)
-* `shaper cake`, `modem` with netem, `tests/ci/test_tin_mapping.sh` (mark 1..4 -> tin order), `tc -s -j` JSON field names in `parse_cake_stats`
+## Verified on the GitHub Actions runner (full kernel, ubuntu-24.04)
+* Lab up (CAKE, netem, IPv4 + IPv6), connectivity, and the tin mapping test: mark 1..4 lands in tin index 0..3
+  (Bulk, Best Effort, Video, Voice), asserted from per-tin packet counters. `tc -s -j` prints CAKE `options`
+  (incl. `fwmark`) and per-tin stats in a second JSON object.
+* `models/collect.py` collects ~160-300 labelled rows per run under both FIFO and CAKE; `train.py` completes.
+* Bug found there: the zip upload dropped the executable bit on `lab/netns.sh`. All callers now run it via `bash`,
+  and `bootstrap.sh` / the systemd units no longer rely on the file mode.
+
+## NOT yet verified
+* `tc -s -j` field names in `parse_cake_stats` against the second JSON object printed above
 * `experiments/run.py` thresholds in `check()` (relative to FIFO; tune after the first real numbers)
 * `deploy/bootstrap.sh` on Azure; Let's Encrypt for the `cloudapp.azure.com` name
 
