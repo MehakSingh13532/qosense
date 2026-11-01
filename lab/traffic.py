@@ -141,6 +141,7 @@ def main():
     ap.add_argument("--reverse", action="store_true")
     ap.add_argument("--v6", action="store_true")
     ap.add_argument("--streams", type=int, default=8)
+    ap.add_argument("--bulk-port", type=int, default=None, help="iperf3 server port (default 5201 down / 5202 up)")
     ap.add_argument("--seg-bytes", type=int, default=1_500_000)
     ap.add_argument("--period", type=float, default=2.0)
     a = ap.parse_args()
@@ -154,7 +155,7 @@ def main():
     elif a.kind == "web":
         r = web(dst, a.duration)
     else:
-        r = bulk(dst, a.duration, a.reverse, a.streams)
+        r = bulk(dst, a.duration, a.reverse, a.streams, a.bulk_port)
     r["kind"], r["port"] = a.kind, a.port
     print(json.dumps(r))
 
