@@ -144,7 +144,9 @@ shaper() {
 start_servers() {
   # UDP echo on several ports + HTTP bytes server + iperf3, all in the ISP namespace.
   x "$ISP" bash -c "cd '$(dirname "$0")' && nohup python3 servers.py >/tmp/${NSP}-servers.log 2>&1 &"
+  # one iperf3 server per direction: 5201 = download (-R), 5202 = upload; a server runs one test at a time
   x "$ISP" bash -c "nohup iperf3 -s -p 5201 >/tmp/${NSP}-iperf3.log 2>&1 &"
+  x "$ISP" bash -c "nohup iperf3 -s -p 5202 >/tmp/${NSP}-iperf3-up.log 2>&1 &"
   sleep 0.5
 }
 
