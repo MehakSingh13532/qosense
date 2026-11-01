@@ -1,0 +1,14 @@
+{
+ "scenario": "s6",
+ "title": "Controller crash -> safe state",
+ "heartbeat_present": true,
+ "safe_state_applied": true,
+ "seconds_to_safe": 1.35,
+ "meta": {
+  "down_mbit": 100,
+  "up_mbit": 20,
+  "quick": true,
+  "kernel": "7.0.0-1017-azure",
+  "time": "2026-11-01 22:04:37"
+ }
+}

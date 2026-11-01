@@ -1,0 +1,67 @@
+{
+ "rows_train": 5720,
+ "rows_test": 2784,
+ "runs": 30,
+ "macro_f1": {
+  "lightgbm": 0.996082132242771,
+  "rules": 0.5525897756811399
+ },
+ "voice_recall_unusual_port": {
+  "lightgbm": 1.0,
+  "rules": 0.0
+ },
+ "voice_recall_all": {
+  "lightgbm": 1.0,
+  "rules": 0.3076923076923077
+ },
+ "feature_importance": {
+  "up_down_ratio": 24965.582536966493,
+  "is_udp": 24229.125957336044,
+  "pkt_rate": 21911.74526334558,
+  "host_flows": 9637.934507497537,
+  "rate_cv": 7157.074231374621,
+  "mean_pkt_size": 6791.204440837738,
+  "bytes_rate": 6288.060830405233,
+  "flow_age": 2279.405718235547,
+  "pkt_size_cv": 829.6500668557951
+ },
+ "report_lightgbm": {
+  "bulk": {
+   "precision": 0.9984544049459042,
+   "recall": 1.0,
+   "f1-score": 0.9992266047950503,
+   "support": 1938.0
+  },
+  "web": {
+   "precision": 0.9977924944812362,
+   "recall": 1.0,
+   "f1-score": 0.9988950276243094,
+   "support": 452.0
+  },
+  "video": {
+   "precision": 1.0,
+   "recall": 0.9727891156462585,
+   "f1-score": 0.9862068965517241,
+   "support": 147.0
+  },
+  "voice": {
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1-score": 1.0,
+   "support": 247.0
+  },
+  "accuracy": 0.9985632183908046,
+  "macro avg": {
+   "precision": 0.9990617248567851,
+   "recall": 0.9931972789115646,
+   "f1-score": 0.996082132242771,
+   "support": 2784.0
+  },
+  "weighted avg": {
+   "precision": 0.9985656768285494,
+   "recall": 0.9985632183908046,
+   "f1-score": 0.9985539247026217,
+   "support": 2784.0
+  }
+ }
+}
