@@ -174,3 +174,34 @@ def test_parse_cake_json():
     s = parse_cake_stats(js)
     assert [t["name"] for t in s["tins"]] == ["bulk", "besteffort", "video", "voice"]
     assert s["tins"][3]["pkts"] == 3 and parse_cake_stats("not json") is None
+
+
+def _sim_link(capacity_kbit, ticks, cfg=None, start=None, dt=0.5, estimator=None):
+    """Fluid model of a bloated modem behind the shaper: rate above capacity builds a queue."""
+    e = estimator or CapacityEstimator(cfg or EstimatorConfig(), start or int(capacity_kbit * 0.9))
+    q_kbit, trace = 0.0, []
+    for _ in range(ticks):
+        q_kbit = max(0.0, q_kbit + (e.rate - capacity_kbit) * dt)
+        delay_ms = q_kbit / capacity_kbit * 1000.0
+        achieved = min(e.rate, capacity_kbit)
+        e.step(delay_ms, achieved)
+        trace.append((e.rate, delay_ms))
+    return e, trace
+
+
+def test_probe_overshoot_stays_small_in_steady_state():
+    cfg = EstimatorConfig(max_kbit=150_000)            # headroom above the true 100 Mbit so probing is exercised
+    old = EstimatorConfig(max_kbit=150_000, delay_thresh_ms=15, min_step_up=0.05, probe_delay_frac=1.0)
+    peaks = {}
+    for name, c in (("new", cfg), ("old", old)):
+        _, tr = _sim_link(100_000, 500, cfg=c, start=90_000)
+        tail = tr[250:]
+        peaks[name] = max(d for _, d in tail)
+        assert sum(r for r, _ in tail) / len(tail) > 0.93 * 100_000      # little throughput given up
+    assert peaks["new"] < 18.0 and peaks["new"] < 0.85 * peaks["old"]   # approach the bad rate geometrically
+
+
+def test_estimator_finds_higher_capacity_after_it_appears():
+    e, _ = _sim_link(40_000, 80, cfg=EstimatorConfig(max_kbit=150_000), start=36_000)
+    e2, _ = _sim_link(100_000, 300, estimator=e)
+    assert e2.rate > 0.9 * 100_000
