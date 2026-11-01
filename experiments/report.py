@@ -60,22 +60,35 @@ def table(head, rows):
     return f"<div class=scroll><table><thead><tr>{h}</tr></thead><tbody>{b}</tbody></table></div>"
 
 
+def call_table(sc):
+    rows = []
+    for cfg, e in sc["configs"].items():
+        k, u = e["known_port"], e["unusual_port"]
+        ctl = u.get("controller") or {}
+        rng = "–" if not ctl.get("down_kbit_min") else f"{ctl['down_kbit_min'] / 1000:.0f}–{ctl['down_kbit_max'] / 1000:.0f}"
+        rows.append([LABEL.get(cfg, cfg), f(k["added_p95_ms"]), f(k.get("steady_added_p95_ms")), f(u["added_p95_ms"]),
+                     f(u.get("steady_added_p95_ms")), f(u["loaded"]["p99"]), f(u["loaded"]["loss_pct"]),
+                     f(u["bulk_down_mbit"], 0), f(u["bulk_up_mbit"], 0), rng])
+    return table(["Configuration", "Added p95 known port (ms)", "…steady", "Added p95 unusual port (ms)", "…steady",
+                  "p99 RTT unusual (ms)", "Loss % (unusual)", "Bulk ↓ Mbit/s", "Bulk ↑ Mbit/s", "Shaper ↓ range (Mbit/s)"], rows)
+
+
 def build():
-    s1, s2, s3, s4, s6 = (load(n) for n in ("s1", "s2", "s3", "s4", "s6"))
+    s1, s2, s3, s4, s6, s7 = (load(n) for n in ("s1", "s2", "s3", "s4", "s6", "s7"))
     parts = []
-    meta = next((x["meta"] for x in (s1, s2, s3, s4, s6) if x and "meta" in x), {})
+    meta = next((x["meta"] for x in (s1, s2, s3, s4, s6, s7) if x and "meta" in x), {})
     if s1:
-        rows = []
-        for cfg, e in s1["configs"].items():
-            k, u = e["known_port"], e["unusual_port"]
-            rows.append([LABEL.get(cfg, cfg), f(k["added_p95_ms"]), f(u["added_p95_ms"]), f(u["loaded"]["p99"]),
-                         f(u["loaded"]["loss_pct"]), f(u["bulk_down_mbit"], 0), f(u["bulk_up_mbit"], 0)])
-        parts.append("<h2>S1 · ISO download during a video call</h2><p>Call = 50 pps × 172 B UDP echo. "
-                     "<b>Added p95 latency</b> = loaded p95 RTT minus idle median RTT. The <i>unusual port</i> "
-                     "column runs the same call on a port no rule knows: only a classifier that recognises "
-                     "behaviour can protect it.</p>" +
-                     table(["Configuration", "Added p95 – known port (ms)", "Added p95 – unusual port (ms)",
-                            "p99 RTT – unusual port (ms)", "Loss % (unusual)", "Bulk ↓ Mbit/s", "Bulk ↑ Mbit/s"], rows))
+        parts.append("<h2>S1 · ISO download on another device during a video call</h2><p>Call = 50 pps × 172 B UDP echo. "
+                     "<b>Added p95 latency</b> = loaded p95 RTT minus idle median RTT; <b>steady</b> excludes the first "
+                     "7 s (classification warm-up). The download runs on a different device from the call, and CAKE "
+                     "already isolates devices from each other, so this is the easy case: a fixed-rate static CAKE "
+                     "does very well here. The adaptive controller trades a little latency for ~5% more throughput "
+                     "(it probes the real capacity instead of trusting a configured number).</p>" + call_table(s1))
+    if s7:
+        parts.append("<h2>S7 · ISO download on the <i>same</i> device, on a port no rule knows</h2><p>The download and "
+                     "the call share one device, and the download uses ports the rule baseline cannot recognise, so the "
+                     "rules leave it in best-effort next to the call. A classifier that recognises behaviour can put "
+                     "the download in the bulk tin and the call in the voice tin.</p>" + call_table(s7))
     if s2:
         ser = {c: [(b, v) for b, v in e["binned_p95"] if v is not None] for c, e in s2["configs"].items()}
         rows = [[LABEL.get(c, c), f(e["baseline_p95_ms"]), f(e["peak_ms"], 0),
