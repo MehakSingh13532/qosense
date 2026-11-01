@@ -7,7 +7,8 @@ Run as root with the lab up (lab/netns.sh up). Scenarios:
   s3  three-TV household + a gamer
   s4  temporary intent: the odd-port call is fixed by a user intent, which then expires
   s6  controller crash -> watchdog applies the safe state
-  s7  ISO download on the SAME device as the call, on ports no rule knows (where a classifier can matter)
+  s7  video call while the SAME device uploads a backup (16 streams) and downloads an ISO on ports no rule
+      knows; the call needs more than its fair share of the uplink, so its tin decides whether it survives
 
 Configs: fifo | cake_static | qosense_rules | qosense_nocusum | qosense_model
 Results: experiments/results/<scenario>.json, rendered by experiments/report.py.
@@ -119,8 +120,8 @@ class Ctrl:
             self.thread.join(timeout=3)
 
 
-def idle_baseline(port, secs=5):
-    return result(spawn("h1", "voice", "--port", str(port), "--duration", str(secs)))
+def idle_baseline(port, secs=5, kind="voice"):
+    return result(spawn("h1", kind, "--port", str(port), "--duration", str(secs)))
 
 
 def load(kind="iso", secs=25):
@@ -132,22 +133,22 @@ def load(kind="iso", secs=25):
 
 # ---------------------------------------------------------------- scenarios
 def load_same_host(secs):
-    """ISO download + upload from h1 (the SAME device as the call) on ports no rule knows."""
+    """ISO download + 16-stream backup upload from h1 (the SAME device as the call) on ports no rule knows."""
     return [spawn("h1", "bulk", "--duration", str(secs), "--reverse", "--bulk-port", str(ODD_BULK_DOWN)),
-            spawn("h1", "bulk", "--duration", str(secs), "--streams", "4", "--bulk-port", str(ODD_BULK_UP))]
+            spawn("h1", "bulk", "--duration", str(secs), "--streams", "16", "--bulk-port", str(ODD_BULK_UP))]
 
 
-def call_under_load(name, title, cfgs, secs, loader):
-    out = {"scenario": name, "title": title, "configs": {}}
+def call_under_load(name, title, cfgs, secs, loader, call_kind="voice"):
+    out = {"scenario": name, "title": title, "call_kind": call_kind, "configs": {}}
     for cfg in cfgs:
         entry = {}
         with Ctrl(cfg) as cx:
             for label, port in (("known_port", KNOWN_PORT), ("unusual_port", ODD_PORT)):
-                base = summarize(idle_baseline(port))
+                base = summarize(idle_baseline(port, kind=call_kind))
                 m = cx.mark()
                 bg = loader(secs=secs + 6)
                 time.sleep(4)
-                call = result(spawn("h1", "voice", "--port", str(port), "--duration", str(secs)))
+                call = result(spawn("h1", call_kind, "--port", str(port), "--duration", str(secs)))
                 bulk = [result(p, timeout=secs + 60) for p in bg]
                 s = summarize(call)
                 # steady state = after the controller has had time to classify the call (first 7 s excluded)
@@ -169,7 +170,8 @@ def s1(cfgs, secs):
 
 
 def s7(cfgs, secs):
-    return call_under_load("s7", "ISO download on the same device, on a port no rule knows", cfgs, secs, load_same_host)
+    return call_under_load("s7", "Video call while the same device uploads a backup on a port no rule knows",
+                           cfgs, secs, load_same_host, call_kind="vcall")
 
 
 def s2(cfgs, secs):
