@@ -7,6 +7,7 @@ Run as root with the lab up (lab/netns.sh up). Scenarios:
   s3  three-TV household + a gamer
   s4  temporary intent: the odd-port call is fixed by a user intent, which then expires
   s6  controller crash -> watchdog applies the safe state
+  s7  ISO download on the SAME device as the call, on ports no rule knows (where a classifier can matter)
 
 Configs: fifo | cake_static | qosense_rules | qosense_nocusum | qosense_model
 Results: experiments/results/<scenario>.json, rendered by experiments/report.py.
@@ -28,6 +29,7 @@ NETNS = os.path.join(ROOT, "lab", "netns.sh")
 TRAFFIC = os.path.join(ROOT, "lab", "traffic.py")
 RES = os.path.join(ROOT, "experiments", "results")
 ODD_PORT, KNOWN_PORT = 51234, 3478
+ODD_BULK_DOWN, ODD_BULK_UP = 40010, 40011      # iperf3 servers on ports no rule-based classifier knows
 MODEL = os.path.join(ROOT, "models", "model.txt")
 
 
@@ -67,6 +69,7 @@ class Ctrl:
 
     def __init__(self, cfg):
         self.cfg, self.c, self.stop, self.thread = cfg, None, threading.Event(), None
+        self.trace, self.sampler = [], None
 
     def __enter__(self):
         sh("bash", NETNS, "shaper", "fifo" if self.cfg == "fifo" else "cake", str(DOWN), str(UP))
@@ -79,8 +82,34 @@ class Ctrl:
                                 heartbeat="/tmp/qosense-heartbeat")
             self.thread = threading.Thread(target=self.c.run_forever, args=(0.5, self.stop), daemon=True)
             self.thread.start()
+            self.sampler = threading.Thread(target=self._sample, daemon=True)
+            self.sampler.start()
             time.sleep(8)           # let the probe collect a baseline
         return self
+
+    def _sample(self):
+        """Record what the controller did (rates, measured delay, rollbacks) so results can be explained."""
+        t0 = time.monotonic()
+        while not self.stop.is_set():
+            k = self.c.state.get("kpi", {})
+            self.trace.append([round(time.monotonic() - t0, 2), k.get("delay_ms"), k.get("down_kbit"), k.get("up_kbit"),
+                               k.get("down_achieved_kbit"), k.get("up_achieved_kbit"), k.get("rollbacks")])
+            self.stop.wait(0.5)
+
+    def mark(self):
+        return len(self.trace)
+
+    def since(self, i):
+        """Compact summary of the controller's behaviour since mark(): rate range, delay percentiles, rollbacks."""
+        tr = self.trace[i:]
+        if not tr:
+            return None
+        dn = [r[2] for r in tr if r[2] is not None]
+        dl = [r[1] for r in tr if r[1] is not None]
+        return {"samples": len(tr), "down_kbit_min": min(dn) if dn else None, "down_kbit_max": max(dn) if dn else None,
+                "delay_ms_p50": pctl(dl, 50), "delay_ms_p95": pctl(dl, 95),
+                "rollbacks": (tr[-1][6] or 0) - (tr[0][6] or 0),
+                "trace": tr[::2]}          # every second sample = 1 Hz
 
     def __exit__(self, *a):
         self.stop.set()
@@ -102,14 +131,21 @@ def load(kind="iso", secs=25):
 
 
 # ---------------------------------------------------------------- scenarios
-def s1(cfgs, secs):
-    out = {"scenario": "s1", "title": "ISO download during a video call", "configs": {}}
+def load_same_host(secs):
+    """ISO download + upload from h1 (the SAME device as the call) on ports no rule knows."""
+    return [spawn("h1", "bulk", "--duration", str(secs), "--reverse", "--bulk-port", str(ODD_BULK_DOWN)),
+            spawn("h1", "bulk", "--duration", str(secs), "--streams", "4", "--bulk-port", str(ODD_BULK_UP))]
+
+
+def call_under_load(name, title, cfgs, secs, loader):
+    out = {"scenario": name, "title": title, "configs": {}}
     for cfg in cfgs:
         entry = {}
-        with Ctrl(cfg):
+        with Ctrl(cfg) as cx:
             for label, port in (("known_port", KNOWN_PORT), ("unusual_port", ODD_PORT)):
                 base = summarize(idle_baseline(port))
-                bg = load(secs=secs + 6)
+                m = cx.mark()
+                bg = loader(secs=secs + 6)
                 time.sleep(4)
                 call = result(spawn("h1", "voice", "--port", str(port), "--duration", str(secs)))
                 bulk = [result(p, timeout=secs + 60) for p in bg]
@@ -121,10 +157,19 @@ def s1(cfgs, secs):
                                 "steady_p95_ms": steady,
                                 "steady_added_p95_ms": None if steady is None else steady - (base["p50"] or 0),
                                 "added_p95_ms": (s["p95"] or 0) - (base["p50"] or 0),
-                                "bulk_down_mbit": bulk[0].get("mbit"), "bulk_up_mbit": bulk[1].get("mbit")}
+                                "bulk_down_mbit": bulk[0].get("mbit"), "bulk_up_mbit": bulk[1].get("mbit"),
+                                "controller": cx.since(m) if cx.c else None}
         out["configs"][cfg] = entry
-        print("s1", cfg, json.dumps({k: v["added_p95_ms"] for k, v in entry.items()}), flush=True)
+        print(name, cfg, json.dumps({k: v["added_p95_ms"] for k, v in entry.items()}), flush=True)
     return out
+
+
+def s1(cfgs, secs):
+    return call_under_load("s1", "ISO download on another device during a video call", cfgs, secs, load)
+
+
+def s7(cfgs, secs):
+    return call_under_load("s7", "ISO download on the same device, on a port no rule knows", cfgs, secs, load_same_host)
 
 
 def s2(cfgs, secs):
@@ -252,7 +297,7 @@ def check(res):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("scenarios", nargs="*", default=["s1", "s2", "s3", "s4", "s6"])
+    ap.add_argument("scenarios", nargs="*", default=["s1", "s2", "s3", "s4", "s6", "s7"])
     ap.add_argument("--quick", action="store_true", help="short durations for CI")
     ap.add_argument("--configs", nargs="*", default=ALL_CFGS)
     ap.add_argument("--assert", dest="do_assert", action="store_true")
@@ -263,7 +308,7 @@ def main():
     for sc in a.scenarios:
         res[sc] = {"s1": lambda: s1(a.configs, secs), "s2": lambda: s2(a.configs, secs + 15),
                    "s3": lambda: s3(a.configs, secs), "s4": lambda: s4(max(8, secs // 2)),
-                   "s6": s6}[sc]()
+                   "s6": s6, "s7": lambda: s7(a.configs, secs)}[sc]()
         res[sc]["meta"] = {"down_mbit": DOWN, "up_mbit": UP, "quick": a.quick,
                            "kernel": os.uname().release, "time": time.strftime("%Y-%m-%d %H:%M:%S")}
         with open(os.path.join(RES, f"{sc}.json"), "w") as fh:
