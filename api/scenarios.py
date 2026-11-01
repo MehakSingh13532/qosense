@@ -66,18 +66,18 @@ class Scenarios:
         return {"started": True, "seconds": dur}
 
     def _modem(self, down, up):
-        self._run([NETNS, "modem", str(down), str(up)], capture_output=True)
+        self._run(["bash", NETNS, "modem", str(down), str(up)], capture_output=True)
 
     def set_mode(self, controller, mode: str) -> None:
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
         self.mode = mode
         if mode == "qosense":
-            self._run([NETNS, "shaper", "cake", str(self.down), str(self.up)], capture_output=True)
+            self._run(["bash", NETNS, "shaper", "cake", str(self.down), str(self.up)], capture_output=True)
             controller.enf.initial_setup(self.up * 950, self.down * 950)
             controller.enabled = True
         else:
             controller.enabled = False
-            self._run([NETNS, "shaper", "fifo" if mode == "fifo" else "cake", str(self.down), str(self.up)],
+            self._run(["bash", NETNS, "shaper", "fifo" if mode == "fifo" else "cake", str(self.down), str(self.up)],
                       capture_output=True)
             controller.enf.up_kbit = controller.enf.down_kbit = None
