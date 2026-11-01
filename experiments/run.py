@@ -114,7 +114,12 @@ def s1(cfgs, secs):
                 call = result(spawn("h1", "voice", "--port", str(port), "--duration", str(secs)))
                 bulk = [result(p, timeout=secs + 60) for p in bg]
                 s = summarize(call)
+                # steady state = after the controller has had time to classify the call (first 7 s excluded)
+                st = [r for t, r in call.get("trace", []) if t >= 7]
+                steady = pctl(st, 95) if st else None
                 entry[label] = {"idle": base, "loaded": s,
+                                "steady_p95_ms": steady,
+                                "steady_added_p95_ms": None if steady is None else steady - (base["p50"] or 0),
                                 "added_p95_ms": (s["p95"] or 0) - (base["p50"] or 0),
                                 "bulk_down_mbit": bulk[0].get("mbit"), "bulk_up_mbit": bulk[1].get("mbit")}
         out["configs"][cfg] = entry
