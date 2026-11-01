@@ -42,6 +42,13 @@ def mixes(secs):
          ("h2", ["game", "--port", str(v2), "--duration", d], VOICE, v2, 0),
          ("h3", ["bulk", "--duration", d, "--reverse", "--streams", "6"], BULK, 5201, 50_000),
          ("h3", ["web", "--duration", d], WEB, 8000, 0)],
+        # video calls (labelled VOICE = real-time interactive), alone on a host and next to that host's own upload
+        [("h1", ["vcall", "--port", str(v1), "--duration", d], VOICE, v1, 0),
+         ("h1", ["bulk", "--duration", d, "--streams", "8"], BULK, 5202, 50_000),
+         ("h2", ["bulk", "--duration", d, "--reverse"], BULK, 5201, 50_000)],
+        [("h1", ["vcall", "--port", str(v1), "--duration", d], VOICE, v1, 0),
+         ("h2", ["bulk", "--duration", d, "--streams", "16"], BULK, 5202, 50_000),
+         ("h3", ["web", "--duration", d], WEB, 8000, 0)],
     ]
 
 
