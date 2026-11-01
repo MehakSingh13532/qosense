@@ -147,6 +147,9 @@ start_servers() {
   # one iperf3 server per direction: 5201 = download (-R), 5202 = upload; a server runs one test at a time
   x "$ISP" bash -c "nohup iperf3 -s -p 5201 >/tmp/${NSP}-iperf3.log 2>&1 &"
   x "$ISP" bash -c "nohup iperf3 -s -p 5202 >/tmp/${NSP}-iperf3-up.log 2>&1 &"
+  # same, on ports no rule-based classifier knows (scenario S7: ISO download on an unusual port)
+  x "$ISP" bash -c "nohup iperf3 -s -p 40010 >/tmp/${NSP}-iperf3-odd-down.log 2>&1 &"
+  x "$ISP" bash -c "nohup iperf3 -s -p 40011 >/tmp/${NSP}-iperf3-odd-up.log 2>&1 &"
   sleep 0.5
 }
 
