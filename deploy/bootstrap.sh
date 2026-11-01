@@ -27,6 +27,7 @@ fi
 echo "== code"
 if [ -d "$DIR/.git" ]; then git -C "$DIR" fetch -q origin "$BRANCH" && git -C "$DIR" checkout -q "$BRANCH" && git -C "$DIR" reset -q --hard "origin/$BRANCH"
 else git clone -q --branch "$BRANCH" "https://github.com/$REPO.git" "$DIR" || git clone -q "https://github.com/$REPO.git" "$DIR"; fi
+chmod +x "$DIR"/deploy/*.sh "$DIR"/lab/*.sh "$DIR"/tests/ci/*.sh 2>/dev/null || true
 python3 -m venv "$DIR/.venv"
 "$DIR/.venv/bin/pip" install -q -r "$DIR/requirements.txt"
 
