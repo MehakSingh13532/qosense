@@ -6,8 +6,8 @@ After=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 EnvironmentFile=/etc/qosense.env
-ExecStart=/opt/qosense/lab/netns.sh up
-ExecStop=/opt/qosense/lab/netns.sh down
+ExecStart=/bin/bash /opt/qosense/lab/netns.sh up
+ExecStop=/bin/bash /opt/qosense/lab/netns.sh down
 
 [Install]
 WantedBy=multi-user.target
