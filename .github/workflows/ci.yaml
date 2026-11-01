@@ -1,0 +1,110 @@
+name: ci
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Full-length experiments (slower)"
+        type: boolean
+        default: false
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q
+
+  lab:
+    needs: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - name: Install lab tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 nftables conntrack iperf3 irtt iputils-ping
+          pip install -r requirements.txt
+      - name: Kernel modules (probe-then-install)
+        run: |
+          uname -r
+          sudo bash lab/netns.sh probe-modules
+      - name: Lab up
+        run: sudo DOWN_MBIT=100 UP_MBIT=20 bash lab/netns.sh up
+      - name: Lab connectivity (IPv4 + IPv6)
+        run: |
+          sudo ip netns exec qs-h1 ping -c 3 -W 2 198.51.100.10
+          sudo ip netns exec qs-h1 ping -6 -c 3 -W 2 fd00:3::10
+      - name: Tin mapping (mark 1..4 -> Bulk/BE/Video/Voice)
+        run: sudo bash tests/ci/test_tin_mapping.sh
+      - name: Train classifier on lab traffic
+        run: sudo -E env "PATH=$PATH" python models/collect.py --out models/lab_flows.csv --secs 14 --repeats 3 && python models/train.py --data models/lab_flows.csv --out models/model.txt --card models/MODEL_CARD.md
+      - name: Experiments
+        env:
+          FULL: ${{ github.event.inputs.full }}
+        run: |
+          ARGS="--quick"; [ "$FULL" = "true" ] && ARGS=""
+          sudo -E env "PATH=$PATH" python experiments/run.py $ARGS --assert
+      - name: Report
+        if: always()
+        run: python experiments/report.py experiments/report.html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qosense-results
+          path: |
+            experiments/results/
+            experiments/report.html
+            models/model.txt
+            models/MODEL_CARD.md
+            models/metrics.json
+      - name: Debug on failure
+        if: failure()
+        run: sudo bash lab/netns.sh status || true
+
+  promote:
+    # Only a fully green run (unit + lab + experiments with assertions) updates the branch the VM pulls.
+    needs: lab
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: qosense-results, path: _artifact }
+      - name: Commit model + results onto the deploy branch
+        run: |
+          git config user.name "qosense-ci"; git config user.email "ci@users.noreply.github.com"
+          git checkout -B deploy
+          cp -r _artifact/experiments/* experiments/ 2>/dev/null || true
+          cp _artifact/models/* models/ 2>/dev/null || true
+          rm -rf _artifact
+          git add -f experiments/results experiments/report.html models/model.txt models/MODEL_CARD.md models/metrics.json
+          git commit -m "deploy: CI-approved build $GITHUB_SHA" || true
+          git push -f origin deploy
+
+  pages:
+    needs: lab
+    if: always() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions: { contents: read, pages: write, id-token: write }
+    environment: { name: github-pages, url: "${{ steps.dep.outputs.page_url }}" }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: qosense-results, path: _artifact }
+      - name: Assemble site
+        run: |
+          mkdir site
+          cp _artifact/experiments/report.html site/index.html 2>/dev/null || echo "<p>No report yet.</p>" > site/index.html
+          cp -r _artifact/experiments/results site/results 2>/dev/null || true
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: site }
+      - id: dep
+        uses: actions/deploy-pages@v4
