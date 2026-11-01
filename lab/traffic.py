@@ -117,7 +117,9 @@ def web(dst, duration, size=40_000, gap=0.4):
     return {"requests": len(times), "ms": {"p50": pct(times, 50), "p95": pct(times, 95), "max": max(times)}}
 
 
-def bulk(dst, duration, reverse, streams=8, port=5201):
+def bulk(dst, duration, reverse, streams=8, port=None):
+    # one iperf3 server per direction (a server handles a single test at a time)
+    port = port or (5201 if reverse else 5202)
     cmd = ["iperf3", "-c", dst, "-p", str(port), "-t", str(duration), "-P", str(streams), "-J"]
     if reverse:
         cmd.append("-R")
