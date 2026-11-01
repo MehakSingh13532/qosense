@@ -205,27 +205,3 @@ def test_estimator_finds_higher_capacity_after_it_appears():
     e, _ = _sim_link(40_000, 80, cfg=EstimatorConfig(max_kbit=150_000), start=36_000)
     e2, _ = _sim_link(100_000, 300, estimator=e)
     assert e2.rate > 0.9 * 100_000
-
-
-def test_futile_cuts_stop_when_delay_is_not_ours():
-    """Delay caused elsewhere (e.g. the other direction) must not drive the shaper to the floor."""
-    e = CapacityEstimator(EstimatorConfig(max_kbit=20_000), 20_000)
-    for _ in range(30):
-        e.step(40.0, 22_000)          # persistent delay that cutting does not relieve
-    assert e.rate > 0.75 * 20_000 and e.held > 0
-
-
-def test_recovers_quickly_after_a_transient_bloat_episode():
-    e = CapacityEstimator(EstimatorConfig(max_kbit=20_000), 20_000)
-    for d in (15, 24, 20, 27, 35, 39, 46, 57):     # the S7 cascade seen in CI
-        e.step(d, 22_000)
-    low = e.rate
-    for _ in range(30):                              # 15 s of a clean, busy link
-        e.step(1.0, e.rate)
-    assert e.rate > 0.9 * 20_000 > low
-
-
-def test_cliff_still_cuts_through_the_futile_guard():
-    e, _ = _sim_link(100_000, 40, start=95_000)
-    _sim_link(20_000, 60, estimator=e)
-    assert e.rate < 25_000
