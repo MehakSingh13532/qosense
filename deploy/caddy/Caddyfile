@@ -1,0 +1,11 @@
+# QOSENSE_HOST comes from /etc/qosense.env. With a hostname Caddy gets a Let's Encrypt cert automatically.
+# Empty host => ":80" plain HTTP (only for first smoke test). Add `acme_ca https://acme-staging-v02.api.letsencrypt.org/directory`
+# to the global block while iterating so you do not burn production rate limits.
+{$QOSENSE_HOST::80} {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8000
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+}

@@ -1,0 +1,23 @@
+[Unit]
+Description=QoSense controller + API
+Requires=qosense-lab.service
+After=qosense-lab.service
+
+[Service]
+EnvironmentFile=/etc/qosense.env
+WorkingDirectory=/opt/qosense
+ExecStart=/opt/qosense/.venv/bin/python api/serve.py
+# CAP_NET_ADMIN: tc/conntrack. CAP_SYS_ADMIN: setns/`ip netns exec` into the lab. Nothing else.
+AmbientCapabilities=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_NET_RAW
+NoNewPrivileges=yes
+ProtectHome=yes
+Restart=on-failure
+RestartSec=2
+# Heartbeat directory for the watchdog
+RuntimeDirectory=qosense
+RuntimeDirectoryPreserve=yes
+MemoryMax=600M
+
+[Install]
+WantedBy=multi-user.target

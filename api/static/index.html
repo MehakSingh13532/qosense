@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QoSense · live</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f23;--mut:#5b6670;--line:#dfe3e8;--acc:#0a7d4f;--bad:#b3261e;--warn:#8a6d00}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1114;--card:#161a1f;--fg:#e6e9ec;--mut:#9aa5b0;--line:#2a3138;--acc:#4cc38a;--bad:#ff8a80;--warn:#e6c35c}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
+header{padding:14px 16px;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+h1{font-size:1.15rem;margin:0}header a{color:var(--acc)}
+main{display:grid;gap:12px;padding:0 16px 24px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));max-width:1200px;margin:0 auto}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+section.wide{grid-column:1/-1}h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.kpi b{display:block;font-size:1.5rem;font-variant-numeric:tabular-nums}.kpi span{color:var(--mut);font-size:.8rem}
+button,select,input{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+button{cursor:pointer}button.on{background:var(--acc);color:#fff;border-color:var(--acc)}button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
+table{width:100%;border-collapse:collapse;font-size:.85rem}th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.scroll{overflow-x:auto}.tag{padding:1px 7px;border-radius:99px;border:1px solid var(--line);font-size:.78rem}
+.voice{color:var(--acc)}.bulk{color:var(--warn)}.events{font-size:.82rem;color:var(--mut);max-height:150px;overflow:auto;margin:0;padding-left:16px}
+canvas{max-height:230px}.msg{color:var(--mut);font-size:.82rem;min-height:1.2em}
+</style>
+</head>
+<body>
+<header><h1>QoSense · adaptive QoS for home broadband</h1><span id="conn" class="msg">connecting…</span><a href="/report">experiment report</a><a href="/api/docs">API</a></header>
+<main>
+<section class="wide"><h2>Mode (live A/B on the same lab)</h2>
+  <div class="row" id="modes"></div>
+  <div class="row" id="scn"></div><div class="msg" id="actmsg"></div></section>
+<section class="wide"><h2>Now</h2><div class="kpis" id="kpis"></div></section>
+<section class="wide"><h2>Call latency (a 50 pps call on an unusual port, ms)</h2><canvas id="chart"></canvas></section>
+<section><h2>Flows (what the engine thinks they are)</h2><div class="scroll"><table id="flows"></table></div>
+  <div class="msg">Wrong guess? Pick a class to override that flow.</div></section>
+<section><h2>Intent</h2>
+  <div class="row"><select id="i_cls"><option>voice</option><option>video</option><option>web</option><option>bulk</option></select>
+  <select id="i_target"><option value="any">any device</option><option>10.0.0.2</option><option>10.0.0.3</option><option>10.0.0.4</option></select>
+  <input id="i_ttl" type="number" min="5" max="3600" value="60" style="width:80px" aria-label="seconds"> s
+  <button id="i_go">Apply</button></div>
+  <div class="msg" id="i_msg"></div><div id="i_list"></div>
+  <h2 style="margin-top:14px">Events</h2><ul class="events" id="events"></ul></section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const post=(u,b)=>fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)}).then(async r=>{if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||r.status)}return r.json()});
+const MODES=[['qosense','QoSense (adaptive)'],['cake_static','Static CAKE'],['fifo','No QoS (FIFO)']];
+const SCN=[['iso_download','Start ISO download'],['drop_wan','Drop WAN to 20%'],['tv_night','Two TVs streaming']];
+$('modes').innerHTML=MODES.map(([k,l])=>`<button data-m="${k}">${l}</button>`).join('');
+$('scn').innerHTML=SCN.map(([k,l])=>`<button data-s="${k}">${l}</button>`).join('');
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  const say=m=>$('actmsg').textContent=m;
+  if(b.dataset.m)post('/api/mode',{mode:b.dataset.m}).then(()=>say('mode: '+b.dataset.m)).catch(x=>say(x.message));
+  if(b.dataset.s)post('/api/scenario',{name:b.dataset.s}).then(r=>say(r.started?'running '+b.dataset.s+' for '+r.seconds+' s (auto-resets)':r.reason)).catch(x=>say(x.message));
+  if(b.dataset.pin)post('/api/flow/pin',{flow:b.dataset.pin,cls:b.dataset.cls||null}).catch(x=>say(x.message));
+  if(b.dataset.del)fetch('/api/intent/'+b.dataset.del,{method:'DELETE'});});
+$('i_go').onclick=()=>post('/api/intent',{target:$('i_target').value,cls:$('i_cls').value,ttl_s:+$('i_ttl').value}).then(()=>$('i_msg').textContent='applied').catch(x=>$('i_msg').textContent=x.message);
+const chart=new Chart($('chart'),{type:'line',data:{labels:[],datasets:[
+  {label:'call RTT',data:[],borderColor:'#0a7d4f',pointRadius:0,borderWidth:2,tension:.2},
+  {label:'queue delay on best-effort (probe)',data:[],borderColor:'#b3261e',pointRadius:0,borderWidth:1.5,tension:.2}]},
+  options:{animation:false,responsive:true,scales:{y:{beginAtZero:true,title:{display:true,text:'ms'}},x:{display:false}},plugins:{legend:{position:'bottom'}}}});
+const f=(x,d=0)=>x==null?'–':(+x).toFixed(d);
+function render(s){
+  const k=s.kpi||{},c=s.call||{};
+  $('kpis').innerHTML=[['Call RTT',f(c.rtt_ms,1)+' ms'],['Queue delay',f(c.delay_ms,1)+' ms'],['Shaper ↓',f((k.down_kbit||0)/1000,1)+' Mbit'],['Shaper ↑',f((k.up_kbit||0)/1000,1)+' Mbit'],
+   ['Achieved ↓',f((k.down_achieved_kbit||0)/1000,1)+' Mbit'],['Achieved ↑',f((k.up_achieved_kbit||0)/1000,1)+' Mbit'],['Cliff detected',k.cliff?'yes':'no'],['Rollbacks',k.rollbacks??'–']]
+   .map(([a,b])=>`<div class=kpi><b>${b}</b><span>${a}</span></div>`).join('');
+  document.querySelectorAll('#modes button').forEach(b=>b.classList.toggle('on',b.dataset.m===(s.scenarios||{}).mode));
+  const act=(s.scenarios||{}).active||{};document.querySelectorAll('#scn button').forEach(b=>{b.disabled=b.dataset.s in act;});
+  const rec=c.recent||[];const L=chart.data.labels;
+  rec.slice(-5).forEach(v=>{L.push('');chart.data.datasets[0].data.push(v);chart.data.datasets[1].data.push(c.delay_ms);});
+  while(L.length>120){L.shift();chart.data.datasets.forEach(d=>d.data.shift());}chart.update();
+  $('flows').innerHTML='<tr><th>flow</th><th>class</th><th>conf</th><th>kbit/s</th><th>override</th></tr>'+(s.flows||[]).slice(0,12).map(r=>
+   `<tr><td>${r.flow.replace('198.51.100.10','srv')}</td><td><span class="tag ${r.class}">${r.class}</span></td><td>${r.pinned?'pinned':f(r.conf,2)}</td><td>${r.kbit}</td>
+    <td><select data-flow="${r.flow}" onchange="post('/api/flow/pin',{flow:this.dataset.flow,cls:this.value||null})"><option value="">auto</option>${['voice','video','web','bulk'].map(x=>`<option ${r.pinned&&r.class===x?'selected':''}>${x}</option>`).join('')}</select></td></tr>`).join('');
+  $('i_list').innerHTML=(s.intents||[]).map(i=>`<div class="row"><span class="tag">${i.cls}</span> ${i.target} <button data-del="${i.id}">remove</button></div>`).join('');
+  $('events').innerHTML=(s.events||[]).map(e=>`<li>${e.msg}</li>`).join('');
+}
+function connect(){const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/api/live');
+  ws.onopen=()=>$('conn').textContent='live';ws.onmessage=e=>render(JSON.parse(e.data));
+  ws.onclose=()=>{$('conn').textContent='reconnecting…';setTimeout(connect,2000)};}
+connect();
+</script>
+</body>
+</html>

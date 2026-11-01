@@ -1,0 +1,14 @@
+[Unit]
+Description=QoSense watchdog (safe static CAKE if the controller stops heart-beating)
+After=qosense-lab.service
+
+[Service]
+EnvironmentFile=/etc/qosense.env
+WorkingDirectory=/opt/qosense
+ExecStart=/bin/sh -c 'exec /opt/qosense/.venv/bin/python -m controller.watchdog --ns $${NSP}-rtr --up-kbit $$((UP_MBIT*900)) --down-kbit $$((DOWN_MBIT*900))'
+Restart=always
+RestartSec=1
+MemoryMax=80M
+
+[Install]
+WantedBy=multi-user.target
