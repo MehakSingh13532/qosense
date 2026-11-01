@@ -6,7 +6,9 @@ current shaper rate. Output: the next shaper rate.
 * Delay above threshold while the link is busy  -> decrease (towards 90% of the
   achieved rate), clamped to -15%/tick.
 * Delay low and the shaper is the limit (achieved >= 80% of shaper) -> probe up
-  by up to +5%/tick, slowing geometrically as it nears the last rate that caused bufferbloat; clamped to the configured max.
+  by up to +5%/tick, slowing geometrically as it nears the last rate that caused bufferbloat and never
+  above 97% of it; that remembered rate drifts up faster the longer the link stays clean, so a known knee
+  is re-tested every ~10 s instead of every second, while real capacity gains are still found.
 * CUSUM cliff detector: a sustained positive drift in delay *with* a collapse in
   achieved/shaper ratio flags a capacity cliff; the decrease clamp is then
   widened to -50%/tick so recovery takes seconds rather than minutes.
@@ -20,12 +22,14 @@ from dataclasses import dataclass
 class EstimatorConfig:
     min_kbit: int = 2_000
     max_kbit: int = 100_000
-    delay_thresh_ms: float = 10.0     # loaded-RTT increase that counts as bufferbloat
+    delay_thresh_ms: float = 5.0      # loaded-RTT increase that counts as bufferbloat
     max_step_down: float = 0.15
     max_step_up: float = 0.05         # probe step when far from the last rate that caused bufferbloat
     min_step_up: float = 0.005        # smallest probe step (a 5% overshoot at 500 ms ticks = ~30 ms of queue)
     approach_gain: float = 0.4        # step = gain * remaining gap to the last bad rate (geometric approach)
-    bad_rate_decay: float = 1.01      # the remembered bad rate drifts up so capacity gains are still found
+    bad_rate_decay: float = 0.0002    # the remembered bad rate drifts up by decay*clean_ticks per tick (capped), so
+                                      # capacity gains are still found but a known knee is not re-probed every second
+    bad_rate_margin: float = 0.97     # never probe above this fraction of the last rate that caused bufferbloat
     probe_delay_frac: float = 0.5     # only probe up while delay is below this fraction of the threshold
     cliff_step_down: float = 0.50
     util_up: float = 0.80
@@ -42,6 +46,7 @@ class CapacityEstimator:
         self.cliff = False
         self.cliff_events = 0
         self.bad_rate = None            # last shaper rate at which delay exceeded the threshold
+        self.clean_ticks = 0            # ticks since the last bufferbloat event
 
     def _update_cusum(self, delay_ms: float) -> None:
         c = self.cfg
@@ -64,15 +69,20 @@ class CapacityEstimator:
             down = c.cliff_step_down if self.cliff else c.max_step_down
             target = max(target, self.rate * (1.0 - down))
             self.bad_rate = float(self.rate)
+            self.clean_ticks = 0
         else:
+            self.clean_ticks += 1
             if self.bad_rate is not None:
-                self.bad_rate = min(float(c.max_kbit), self.bad_rate * c.bad_rate_decay)
+                drift = 1.0 + c.bad_rate_decay * min(self.clean_ticks, 100)
+                self.bad_rate = min(float(c.max_kbit) / c.bad_rate_margin, self.bad_rate * drift)
             if delay_ms <= c.delay_thresh_ms * c.probe_delay_frac and achieved_kbit >= c.util_up * self.rate:
                 step = c.max_step_up
                 if self.bad_rate is not None:
                     gap = (self.bad_rate - self.rate) / self.rate
                     step = min(c.max_step_up, max(c.min_step_up, c.approach_gain * gap))
                 target = self.rate * (1.0 + step)
+                if self.bad_rate is not None:
+                    target = max(float(self.rate), min(target, c.bad_rate_margin * self.bad_rate))
         new = int(max(c.min_kbit, min(c.max_kbit, target)))
         self.rate = new
         return new
