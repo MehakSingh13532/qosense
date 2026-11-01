@@ -9,6 +9,8 @@ current shaper rate. Output: the next shaper rate.
   by up to +5%/tick, slowing geometrically as it nears the last rate that caused bufferbloat and never
   above 97% of it; that remembered rate drifts up faster the longer the link stays clean, so a known knee
   is re-tested every ~10 s instead of every second, while real capacity gains are still found.
+* If several cuts in one bufferbloat episode do not reduce the delay, the queue is not behind this
+  shaper (e.g. the other direction is congested), so further cuts are refused.
 * CUSUM cliff detector: a sustained positive drift in delay *with* a collapse in
   achieved/shaper ratio flags a capacity cliff; the decrease clamp is then
   widened to -50%/tick so recovery takes seconds rather than minutes.
@@ -31,6 +33,8 @@ class EstimatorConfig:
                                       # capacity gains are still found but a known knee is not re-probed every second
     bad_rate_margin: float = 0.97     # never probe above this fraction of the last rate that caused bufferbloat
     probe_delay_frac: float = 0.5     # only probe up while delay is below this fraction of the threshold
+    futile_cuts: int = 4              # after this many cuts in one bloat episode with no delay improvement,
+                                      # stop cutting: the queue is not behind this shaper (wrong direction)
     cliff_step_down: float = 0.50
     util_up: float = 0.80
     cusum_k_ms: float = 5.0           # slack per sample
@@ -47,11 +51,15 @@ class CapacityEstimator:
         self.cliff_events = 0
         self.bad_rate = None            # last shaper rate at which delay exceeded the threshold
         self.clean_ticks = 0            # ticks since the last bufferbloat event
+        self.episode_cuts = 0           # cuts made in the current bufferbloat episode
+        self.held = 0                   # times a futile cut was refused (diagnostics)
+        self.prev_delay = 0.0
 
-    def _update_cusum(self, delay_ms: float) -> None:
+    def _update_cusum(self, delay_ms: float, achieved_kbit: float) -> None:
         c = self.cfg
         self._cusum = max(0.0, self._cusum + (delay_ms - c.delay_thresh_ms) - c.cusum_k_ms)
-        if self.cfg.use_cusum and self._cusum > c.cusum_h_ms:
+        collapsed = achieved_kbit < c.util_up * self.rate      # the link delivers clearly less than the shaper
+        if self.cfg.use_cusum and self._cusum > c.cusum_h_ms and collapsed:
             if not self.cliff:
                 self.cliff_events += 1
             self.cliff = True
@@ -61,15 +69,27 @@ class CapacityEstimator:
     def step(self, delay_ms: float, achieved_kbit: float) -> int:
         """Return the new shaper rate in kbit/s."""
         c = self.cfg
-        self._update_cusum(delay_ms)
+        self._update_cusum(delay_ms, achieved_kbit)
         target = float(self.rate)
         if delay_ms > c.delay_thresh_ms and achieved_kbit > max(1000.0, 0.05 * self.rate):
-            # shave towards 90% of what actually got through
-            target = min(self.rate, 0.9 * achieved_kbit) if achieved_kbit < self.rate else self.rate * 0.95
-            down = c.cliff_step_down if self.cliff else c.max_step_down
-            target = max(target, self.rate * (1.0 - down))
-            self.bad_rate = float(self.rate)
+            if self.clean_ticks > 0 or self.bad_rate is None:      # a new bufferbloat episode starts
+                self.bad_rate = float(self.rate)
+                self.episode_cuts = 0
+            else:                                                  # remember the highest rate of the episode,
+                self.bad_rate = max(self.bad_rate, float(self.rate))   # not the bottom of the cascade
             self.clean_ticks = 0
+            # Futile only while the link still delivers everything this shaper lets through: then the
+            # queue cannot be behind this shaper. In a real capacity cliff achieved < rate, so we keep cutting.
+            futile = (not self.cliff and self.episode_cuts >= c.futile_cuts
+                      and delay_ms >= self.prev_delay and achieved_kbit >= 0.98 * self.rate)
+            if futile:
+                self.held += 1                                     # cutting has not helped: hold the rate
+            else:
+                # shave towards 90% of what actually got through
+                target = min(self.rate, 0.9 * achieved_kbit) if achieved_kbit < self.rate else self.rate * 0.95
+                down = c.cliff_step_down if self.cliff else c.max_step_down
+                target = max(target, self.rate * (1.0 - down))
+                self.episode_cuts += 1
         else:
             self.clean_ticks += 1
             if self.bad_rate is not None:
@@ -83,6 +103,7 @@ class CapacityEstimator:
                 target = self.rate * (1.0 + step)
                 if self.bad_rate is not None:
                     target = max(float(self.rate), min(target, c.bad_rate_margin * self.bad_rate))
+        self.prev_delay = delay_ms
         new = int(max(c.min_kbit, min(c.max_kbit, target)))
         self.rate = new
         return new
