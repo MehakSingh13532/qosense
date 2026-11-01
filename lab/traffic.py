@@ -3,6 +3,8 @@
 
   voice  : G.711-like call, 50 pps x 172 B, UDP echo, reports RTT percentiles + loss
   game   : 60 Hz x 120 B isochronous UDP echo
+  vcall  : video call, 250 pps x 1200 B UDP echo (~2.4 Mbit/s each way): more than its fair share of a
+           congested uplink, so unlike a voice call it is NOT protected by flow fairness alone
   video  : fetches N-byte segments every period over HTTP, reports per-segment time
   bulk   : iperf3 -P 8 (upload, or download with --reverse), reports Mbit/s
   web    : many small HTTP fetches, reports page-load-like timings
@@ -134,7 +136,7 @@ def bulk(dst, duration, reverse, streams=8, port=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("kind", choices=["voice", "game", "video", "bulk", "web"])
+    ap.add_argument("kind", choices=["voice", "game", "vcall", "video", "bulk", "web"])
     ap.add_argument("--dst", default="198.51.100.10")
     ap.add_argument("--port", type=int, default=3478)
     ap.add_argument("--duration", type=float, default=20)
@@ -148,6 +150,8 @@ def main():
     dst = a.dst if not a.v6 or ":" in a.dst else "fd00:3::10"
     if a.kind == "voice":
         r = udp_stream(dst, a.port, 50, 172, a.duration, a.v6)
+    elif a.kind == "vcall":
+        r = udp_stream(dst, a.port, 250, 1200, a.duration, a.v6)
     elif a.kind == "game":
         r = udp_stream(dst, a.port, 60, 120, a.duration, a.v6)
     elif a.kind == "video":
