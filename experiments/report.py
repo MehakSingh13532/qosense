@@ -67,10 +67,10 @@ def call_table(sc):
         ctl = u.get("controller") or {}
         rng = "–" if not ctl.get("down_kbit_min") else f"{ctl['down_kbit_min'] / 1000:.0f}–{ctl['down_kbit_max'] / 1000:.0f}"
         rows.append([LABEL.get(cfg, cfg), f(k["added_p95_ms"]), f(k.get("steady_added_p95_ms")), f(u["added_p95_ms"]),
-                     f(u.get("steady_added_p95_ms")), f(u["loaded"]["p99"]), f(u["loaded"]["loss_pct"]),
+                     f(u.get("steady_added_p95_ms")), f(u["loaded"]["p99"]), f(k["loaded"]["loss_pct"]), f(u["loaded"]["loss_pct"]),
                      f(u["bulk_down_mbit"], 0), f(u["bulk_up_mbit"], 0), rng])
     return table(["Configuration", "Added p95 known port (ms)", "…steady", "Added p95 unusual port (ms)", "…steady",
-                  "p99 RTT unusual (ms)", "Loss % (unusual)", "Bulk ↓ Mbit/s", "Bulk ↑ Mbit/s", "Shaper ↓ range (Mbit/s)"], rows)
+                  "p99 RTT unusual (ms)", "Loss % (known)", "Loss % (unusual)", "Bulk ↓ Mbit/s", "Bulk ↑ Mbit/s", "Shaper ↓ range (Mbit/s)"], rows)
 
 
 def build():
@@ -85,10 +85,13 @@ def build():
                      "does very well here. The adaptive controller trades a little latency for ~5% more throughput "
                      "(it probes the real capacity instead of trusting a configured number).</p>" + call_table(s1))
     if s7:
-        parts.append("<h2>S7 · ISO download on the <i>same</i> device, on a port no rule knows</h2><p>The download and "
-                     "the call share one device, and the download uses ports the rule baseline cannot recognise, so the "
-                     "rules leave it in best-effort next to the call. A classifier that recognises behaviour can put "
-                     "the download in the bulk tin and the call in the voice tin.</p>" + call_table(s7))
+        parts.append("<h2>S7 · Video call while the <i>same</i> device uploads a backup on a port no rule knows</h2><p>"
+                     "Call = 250 pps × 1200 B UDP echo (~2.4 Mbit/s each way). The same laptop runs a 16-stream backup "
+                     "upload and an ISO download on ports no rule knows. In the best-effort tin, flow fairness gives the "
+                     "call only ~1/17 of the uplink, less than it needs, so it loses packets. Rules recognise the call only "
+                     "on its well-known port; a classifier that recognises behaviour can move it to the voice tin on any "
+                     "port. Compare the <b>loss</b> and <b>steady</b> columns between rules and the AI classifier on the "
+                     "unusual port.</p>" + call_table(s7))
     if s2:
         ser = {c: [(b, v) for b, v in e["binned_p95"] if v is not None] for c, e in s2["configs"].items()}
         rows = [[LABEL.get(c, c), f(e["baseline_p95_ms"]), f(e["peak_ms"], 0),
