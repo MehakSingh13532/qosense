@@ -69,7 +69,7 @@ class Ctrl:
         self.cfg, self.c, self.stop, self.thread = cfg, None, threading.Event(), None
 
     def __enter__(self):
-        sh(NETNS, "shaper", "fifo" if self.cfg == "fifo" else "cake", str(DOWN), str(UP))
+        sh("bash", NETNS, "shaper", "fifo" if self.cfg == "fifo" else "cake", str(DOWN), str(UP))
         sh("conntrack", "-F", ns=f"{NSP}-rtr", check=False)
         if self.cfg.startswith("qosense"):
             from controller.main import build_real
@@ -128,15 +128,15 @@ def s2(cfgs, secs):
     t_cliff = secs * 0.35
     for cfg in cfgs:
         with Ctrl(cfg):
-            sh(NETNS, "modem", str(DOWN), str(UP))
+            sh("bash", NETNS, "modem", str(DOWN), str(UP))
             bg = [spawn("h2", "bulk", "--duration", str(secs + 6), "--reverse")]
             time.sleep(3)
             call_p = spawn("h1", "voice", "--port", str(ODD_PORT), "--duration", str(secs))
             time.sleep(t_cliff)
-            sh(NETNS, "modem", str(out["cliff_down_mbit"]), str(UP))
+            sh("bash", NETNS, "modem", str(out["cliff_down_mbit"]), str(UP))
             call = result(call_p, timeout=secs + 30)
             [result(p, timeout=secs + 60) for p in bg]
-            sh(NETNS, "modem", str(DOWN), str(UP))
+            sh("bash", NETNS, "modem", str(DOWN), str(UP))
         tr = call.get("trace", [])
         pre = [r for t, r in tr if t < t_cliff - 2]
         base = pctl(pre, 95) or 0
@@ -198,7 +198,7 @@ def s4(secs):
 def s6():
     """kill -9 the controller; the watchdog must apply the safe state within 2 s."""
     out = {"scenario": "s6", "title": "Controller crash -> safe state"}
-    sh(NETNS, "shaper", "cake", str(DOWN), str(UP))
+    sh("bash", NETNS, "shaper", "cake", str(DOWN), str(UP))
     ctl = subprocess.Popen(["python3", "-m", "controller.main", "--ns", f"{NSP}-rtr", "--up-mbit", str(UP),
                             "--down-mbit", str(DOWN), "--classifier", "rules"], cwd=ROOT)
     wd = subprocess.Popen(["python3", "-m", "controller.watchdog", "--ns", f"{NSP}-rtr", "--timeout", "1.5",
