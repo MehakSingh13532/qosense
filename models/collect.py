@@ -37,7 +37,7 @@ def mixes(secs):
         [("h1", ["game", "--port", str(v1), "--duration", d], VOICE, v1, 0),
          ("h2", ["video", "--duration", d, "--seg-bytes", "4000000", "--period", "2"], VIDEO, 8000, 0),
          ("h3", ["video", "--duration", d, "--seg-bytes", "2500000", "--period", "2"], VIDEO, 8000, 0),
-         ("h2", ["bulk", "--duration", d, "--streams", "4"], BULK, 5201, 50_000)],
+         ("h2", ["bulk", "--duration", d, "--streams", "4"], BULK, 5202, 50_000)],
         [("h1", ["voice", "--port", str(v1), "--duration", d], VOICE, v1, 0),
          ("h2", ["game", "--port", str(v2), "--duration", d], VOICE, v2, 0),
          ("h3", ["bulk", "--duration", d, "--reverse", "--streams", "6"], BULK, 5201, 50_000),
