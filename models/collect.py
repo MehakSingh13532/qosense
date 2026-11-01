@@ -83,7 +83,7 @@ def main():
         w.writerow(["run", "label", "dport"] + FEATURES)
         run_id = 0
         for shaper in a.shapers:
-            subprocess.run([NETNS, "shaper", shaper, os.environ.get("DOWN_MBIT", "100"),
+            subprocess.run(["bash", NETNS, "shaper", shaper, os.environ.get("DOWN_MBIT", "100"),
                             os.environ.get("UP_MBIT", "20")], check=True)
             for _ in range(a.repeats):
                 for mix in mixes(a.secs):
