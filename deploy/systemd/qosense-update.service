@@ -3,4 +3,4 @@ Description=Pull the CI-approved `deploy` branch and restart if it changed
 
 [Service]
 Type=oneshot
-ExecStart=/opt/qosense/deploy/update.sh
+ExecStart=/bin/bash /opt/qosense/deploy/update.sh
